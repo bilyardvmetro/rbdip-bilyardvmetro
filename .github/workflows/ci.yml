@@ -8,6 +8,8 @@ on:
 jobs:
   build-and-check:
     runs-on: ubuntu-latest
+    env:
+      JAVA_TOOL_OPTIONS: "-Dapi.version=1.44"
     steps:
       - uses: actions/checkout@v4
 
