@@ -1,10 +1,11 @@
 package com.rbdip.bookstore.order;
 
-import com.rbdip.bookstore.product.Product;
+import com.rbdip.bookstore.customer.Customer;
+import com.rbdip.bookstore.customer.CustomerService;
 import java.util.List;
 import org.springframework.stereotype.Component;
 
-/** Stores an order and its product snapshots in the caller's transaction. */
+/** Stores an order and its customer/product references in the caller's transaction. */
 @Component
 public class OrderPersistence {
 
@@ -12,19 +13,21 @@ public class OrderPersistence {
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
+    private final CustomerService customerService;
 
-    public OrderPersistence(OrderRepository orderRepository, OrderItemRepository orderItemRepository) {
+    public OrderPersistence(
+            OrderRepository orderRepository, OrderItemRepository orderItemRepository, CustomerService customerService) {
         this.orderRepository = orderRepository;
         this.orderItemRepository = orderItemRepository;
+        this.customerService = customerService;
     }
 
     public Order save(CreateOrderRequest request, List<OrderLine> lines) {
-        Order order = orderRepository.save(new Order(
-                request.customerFullName(), request.customerAddress(), request.customerPhone(), INITIAL_STATUS));
+        Customer customer = customerService.findOrCreate(
+                request.customerFullName(), request.customerAddress(), request.customerPhone());
+        Order order = orderRepository.save(new Order(customer, INITIAL_STATUS));
         for (OrderLine line : lines) {
-            Product product = line.product();
-            orderItemRepository.save(new OrderItem(
-                    order.getId(), product.getName(), product.getPrice(), line.quantity()));
+            orderItemRepository.save(new OrderItem(order.getId(), line.product(), line.quantity()));
         }
         return order;
     }

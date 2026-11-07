@@ -3,13 +3,14 @@ package com.rbdip.bookstore.order;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.rbdip.bookstore.customer.CustomerRepository;
 import com.rbdip.bookstore.product.Product;
 import com.rbdip.bookstore.product.ProductRepository;
 import com.rbdip.bookstore.reference.AbstractIntegrationTest;
@@ -37,12 +38,15 @@ class OrderServiceTest extends AbstractIntegrationTest {
     @Autowired
     private OrderItemRepository items;
 
+    @Autowired
+    private CustomerRepository customers;
+
     @MockBean
     private OrderConfirmationNotifier notifier;
 
     @ParameterizedTest
     @CsvSource({", 80.00", "vip, 71.00", "wholesale, 66.50"})
-    void savesProductSnapshotsAndNotifiesWithTheCalculatedTotal(String customerType, String expectedTotal) {
+    void savesProductReferencesAndNotifiesWithTheCalculatedTotal(String customerType, String expectedTotal) {
         Product first = createProduct("First", "12.50");
         Product second = createProduct("Second", "20.00");
         CreateOrderRequest request = new CreateOrderRequest(
@@ -58,6 +62,10 @@ class OrderServiceTest extends AbstractIntegrationTest {
         assertThat(order.getCustomerAddress()).isEqualTo("Moscow");
         assertThat(order.getCustomerPhone()).isEqualTo("+79990000000");
         assertThat(orders.count()).isEqualTo(1);
+        assertThat(customers.count()).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForList(
+                "SELECT product_id FROM order_items ORDER BY id", Long.class))
+                .containsExactly(first.getId(), second.getId(), first.getId());
         assertThat(items.findByOrderId(order.getId()))
                 .extracting(OrderItem::getProductName, OrderItem::getProductPrice, OrderItem::getQuantity)
                 .containsExactlyInAnyOrder(
@@ -119,6 +127,7 @@ class OrderServiceTest extends AbstractIntegrationTest {
 
         assertThat(orders.count()).isZero();
         assertThat(items.count()).isZero();
+        assertThat(customers.count()).isZero();
     }
 
     private void assertRejected(CreateOrderRequest request, String message) {
@@ -126,6 +135,7 @@ class OrderServiceTest extends AbstractIntegrationTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessage(message);
         assertThat(orders.count()).isZero();
         assertThat(items.count()).isZero();
+        assertThat(customers.count()).isZero();
         verifyNoInteractions(notifier);
     }
 
