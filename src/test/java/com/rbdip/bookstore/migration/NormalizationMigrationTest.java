@@ -34,7 +34,7 @@ class NormalizationMigrationTest {
         List<String> legacyOrders = orderDetails(jdbc, false);
         List<String> legacyItems = itemDetails(jdbc, false);
 
-        Flyway flyway = Flyway.configure().dataSource(dataSource).load();
+        Flyway flyway = Flyway.configure().dataSource(dataSource).target("2").load();
         assertThat(flyway.migrate().migrationsExecuted).isEqualTo(1);
 
         assertThat(orderDetails(jdbc, true)).containsExactlyElementsOf(legacyOrders);

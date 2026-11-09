@@ -9,9 +9,10 @@ import org.springframework.transaction.annotation.Transactional;
 public class CustomerService {
 
     private static final String UPSERT_CUSTOMER = """
-            INSERT INTO customers (full_name, address, phone) VALUES (?, ?, ?)
-            ON CONFLICT ON CONSTRAINT customers_details_key
-            DO UPDATE SET full_name = EXCLUDED.full_name
+            INSERT INTO customers (first_name, last_name, address, phone)
+            SELECT first_name, last_name, ?, ? FROM customer_name_parts(?)
+            ON CONFLICT ON CONSTRAINT customers_name_parts_key
+            DO UPDATE SET first_name = EXCLUDED.first_name
             RETURNING id
             """;
 
@@ -25,7 +26,7 @@ public class CustomerService {
 
     @Transactional
     public Customer findOrCreate(String fullName, String address, String phone) {
-        Long id = jdbcTemplate.queryForObject(UPSERT_CUSTOMER, Long.class, fullName, address, phone);
+        Long id = jdbcTemplate.queryForObject(UPSERT_CUSTOMER, Long.class, address, phone, fullName);
         return customerRepository.findById(id)
                 .orElseThrow(() -> new IllegalStateException("customer " + id + " not found after insert"));
     }

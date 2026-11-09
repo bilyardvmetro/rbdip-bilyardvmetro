@@ -11,6 +11,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.NullAndEmptySource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,5 +66,24 @@ class CustomerServiceTest extends AbstractIntegrationTest {
             }
         }
         assertThat(customers.count()).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @CsvSource(value = {
+        "'Anna Sidorova','Anna','Sidorova'",
+        "'Anna','Anna',''",
+        "'Anna ','Anna ',''",
+        "'  Anna  Sidorova  ','',' Anna  Sidorova  '",
+        "'Иванов Иван Иванович','Иванов','Иван Иванович'",
+        "'李 雷','李','雷'",
+        "'Anna\tSidorova','Anna\tSidorova',''"
+    }, ignoreLeadingAndTrailingWhitespace = false)
+    void preservesFullNameAndReadsOnlyTheNewColumns(String fullName, String firstName, String lastName) {
+        Customer customer = service.findOrCreate(fullName, "Moscow", null);
+
+        assertThat(customer.getFullName()).isEqualTo(fullName);
+        assertThat(customer.getFirstName()).isEqualTo(firstName);
+        assertThat(customer.getLastName()).isEqualTo(lastName);
+        assertThat(service.findOrCreate(fullName, "Moscow", null).getId()).isEqualTo(customer.getId());
     }
 }
