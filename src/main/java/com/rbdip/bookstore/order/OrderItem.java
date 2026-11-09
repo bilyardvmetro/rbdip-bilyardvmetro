@@ -21,8 +21,9 @@ public class OrderItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "order_id", nullable = false)
-    private Long orderId;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "order_id", nullable = false)
+    private Order order;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "product_id", nullable = false)
@@ -35,8 +36,8 @@ public class OrderItem {
         // for JPA
     }
 
-    public OrderItem(Long orderId, Product product, Integer quantity) {
-        this.orderId = orderId;
+    public OrderItem(Order order, Product product, Integer quantity) {
+        this.order = order;
         this.product = product;
         this.quantity = quantity;
     }
@@ -46,7 +47,7 @@ public class OrderItem {
     }
 
     public Long getOrderId() {
-        return orderId;
+        return order.getId();
     }
 
     public String getProductName() {

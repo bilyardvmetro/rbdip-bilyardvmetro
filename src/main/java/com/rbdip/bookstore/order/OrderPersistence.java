@@ -27,7 +27,7 @@ public class OrderPersistence {
                 request.customerFullName(), request.customerAddress(), request.customerPhone());
         Order order = orderRepository.save(new Order(customer, INITIAL_STATUS));
         for (OrderLine line : lines) {
-            orderItemRepository.save(new OrderItem(order.getId(), line.product(), line.quantity()));
+            orderItemRepository.save(order.addItem(line.product(), line.quantity()));
         }
         return order;
     }

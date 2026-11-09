@@ -3,6 +3,7 @@ package com.rbdip.bookstore.migration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.rbdip.bookstore.BookstoreApplication;
+import com.rbdip.bookstore.customer.CustomerService;
 import com.rbdip.bookstore.order.CreateOrderRequest;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -10,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -70,6 +72,7 @@ class OrderApiDuringMigrationTest {
 
             assertThat(jdbc.queryForObject("SELECT full_name FROM customers WHERE id = 1", String.class))
                     .isEqualTo("Legacy Customer");
+            assertMixedWriters(jdbc, context.getBean(CustomerService.class));
             int writes = runTrafficAcrossContract(dataSource, jdbc, rest, request);
             LOGGER.info("Lab3 migration load: workers={}, successfulPosts={}, successfulGets={}, errors=0, schema=V5->V6",
                     WORKERS, writes, writes);
@@ -78,6 +81,43 @@ class OrderApiDuringMigrationTest {
                     + " WHERE table_schema = 'public' AND table_name = 'customers'", String.class))
                     .doesNotContain("full_name");
         }
+    }
+
+    private void assertMixedWriters(JdbcTemplate jdbc, CustomerService customers) throws Exception {
+        String oldWriter = "INSERT INTO customers (full_name) VALUES (?)"
+                + " ON CONFLICT ON CONSTRAINT customers_details_key DO UPDATE SET full_name = EXCLUDED.full_name"
+                + " RETURNING id";
+        CyclicBarrier start = new CyclicBarrier(WORKERS);
+        List<Future<List<Long>>> results = new ArrayList<>();
+        try (var pool = Executors.newFixedThreadPool(WORKERS)) {
+            for (int i = 0; i < WORKERS; i++) {
+                boolean legacy = i % 2 == 0;
+                results.add(pool.submit(() -> {
+                    List<Long> ids = new ArrayList<>();
+                    for (int round = 0; round < 8; round++) {
+                        start.await(5, TimeUnit.SECONDS);
+                        String name = "Concurrent Customer " + round;
+                        ids.add(legacy ? jdbc.queryForObject(oldWriter, Long.class, name)
+                                : customers.findOrCreate(name, null, null).getId());
+                    }
+                    return ids;
+                }));
+            }
+            List<List<Long>> ids = new ArrayList<>();
+            for (Future<List<Long>> result : results) {
+                ids.add(result.get(15, TimeUnit.SECONDS));
+            }
+            for (int round = 0; round < 8; round++) {
+                Long expected = ids.getFirst().get(round);
+                assertThat(expected).isNotNull();
+                for (List<Long> worker : ids) {
+                    assertThat(worker.get(round)).isEqualTo(expected);
+                }
+            }
+        }
+        assertThat(jdbc.update("DELETE FROM customers WHERE first_name = 'Concurrent' AND last_name LIKE 'Customer %'"))
+                .isEqualTo(8);
+        LOGGER.info("Mixed customer writers: rounds=8, writes=32, errors=0");
     }
 
     private int runTrafficAcrossContract(

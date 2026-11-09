@@ -3,12 +3,7 @@ package com.rbdip.bookstore.migration;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -26,7 +21,7 @@ class CustomerNameMigrationTest {
     private static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
 
     @Test
-    void backfillsWithoutLosingNamesAndSupportsBothWritersUntilContract() throws Exception {
+    void backfillsWithoutLosingNamesAndSupportsBothWritersUntilContract() {
         PGSimpleDataSource dataSource = new PGSimpleDataSource();
         dataSource.setUrl(POSTGRES.getJdbcUrl());
         dataSource.setUser(POSTGRES.getUsername());
@@ -49,7 +44,6 @@ class CustomerNameMigrationTest {
         assertThat(fullNames(jdbc).subList(0, legacyNames.size())).containsExactlyElementsOf(legacyNames);
         assertThat(fullNames(jdbc)).endsWith("Old Writer");
         assertDualWrites(jdbc);
-        assertConcurrentWriters(jdbc);
         assertThat(jdbc.queryForObject("SELECT count(*) FROM customers WHERE first_name IS NULL OR last_name IS NULL",
                 Integer.class)).isZero();
 
@@ -101,39 +95,6 @@ class CustomerNameMigrationTest {
         assertThatThrownBy(() -> jdbc.update("INSERT INTO customers (first_name, last_name) VALUES (?, ?)",
                 "x".repeat(200), "y".repeat(100)))
                 .isInstanceOf(DataIntegrityViolationException.class);
-    }
-
-    private void assertConcurrentWriters(JdbcTemplate jdbc) throws Exception {
-        String oldWriter = "INSERT INTO customers (full_name) VALUES ('Concurrent Customer')"
-                + " ON CONFLICT ON CONSTRAINT customers_details_key DO UPDATE SET full_name = EXCLUDED.full_name"
-                + " RETURNING id";
-        String newWriter = "INSERT INTO customers (first_name, last_name) VALUES ('Concurrent', 'Customer')"
-                + " ON CONFLICT ON CONSTRAINT customers_name_parts_key DO UPDATE SET first_name = EXCLUDED.first_name"
-                + " RETURNING id";
-        CountDownLatch start = new CountDownLatch(1);
-        List<Future<List<Long>>> results = new ArrayList<>();
-        try (var pool = Executors.newFixedThreadPool(4)) {
-            for (int i = 0; i < 4; i++) {
-                String sql = i % 2 == 0 ? oldWriter : newWriter;
-                results.add(pool.submit(() -> {
-                    if (!start.await(5, TimeUnit.SECONDS)) {
-                        throw new IllegalStateException("concurrent writers did not start");
-                    }
-                    List<Long> ids = new ArrayList<>();
-                    for (int repeat = 0; repeat < 8; repeat++) {
-                        ids.add(jdbc.queryForObject(sql, Long.class));
-                    }
-                    return ids;
-                }));
-            }
-            start.countDown();
-            List<Long> ids = new ArrayList<>();
-            for (Future<List<Long>> result : results) {
-                ids.addAll(result.get(10, TimeUnit.SECONDS));
-            }
-            assertThat(ids).hasSize(32).doesNotContainNull();
-            assertThat(ids.stream().distinct().toList()).hasSize(1);
-        }
     }
 
     private List<String> fullNames(JdbcTemplate jdbc) {
